@@ -42,6 +42,7 @@
 (define-data-var record-nonce uint u0)
 (define-data-var tokens-per-kg uint u10)
 (define-data-var min-collection uint u1)
+(define-data-var reputation-decay-blocks uint u144)
 
 (define-public (initialize-collection-center
         (name (string-ascii 50))
@@ -95,6 +96,7 @@
             (merge collector-data {
                 total-collected: (+ (get total-collected collector-data) amount),
                 last-collection: current-height,
+                reputation-score: (calculate-reputation tx-sender current-height),
             })
         )
         (map-set collection-records record-id {
@@ -153,4 +155,32 @@
 
 (define-read-only (get-collector-balance (collector principal))
     (ft-get-balance plastic-token collector)
+)
+
+(define-private (calculate-reputation
+        (collector principal)
+        (current-height uint)
+    )
+    (let (
+            (collector-data (unwrap-panic (map-get? collectors collector)))
+            (last-collection-height (get last-collection collector-data))
+            (total-collected (get total-collected collector-data))
+            (blocks-since-last (if (> current-height last-collection-height)
+                (- current-height last-collection-height)
+                u0
+            ))
+            (decay-factor (if (> blocks-since-last (var-get reputation-decay-blocks))
+                (/ (var-get reputation-decay-blocks) blocks-since-last)
+                u1
+            ))
+        )
+        (/ (* total-collected decay-factor) u10)
+    )
+)
+
+(define-read-only (get-reputation (collector principal))
+    (match (map-get? collectors collector)
+        collector-data (some (calculate-reputation collector stacks-block-height))
+        none
+    )
 )
