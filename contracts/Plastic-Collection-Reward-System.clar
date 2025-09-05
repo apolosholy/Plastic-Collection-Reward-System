@@ -59,6 +59,7 @@
 (define-data-var min-collection uint u1)
 (define-data-var reputation-decay-blocks uint u144)
 (define-data-var order-nonce uint u0)
+(define-data-var leaderboard-size uint u10)
 
 (define-public (initialize-collection-center
         (name (string-ascii 50))
@@ -268,4 +269,63 @@
 
 (define-read-only (get-order (order-id uint))
     (map-get? marketplace-orders order-id)
+)
+
+(define-read-only (get-leaderboard-by-collection (limit uint))
+    (let (
+            (max-limit (if (> limit (var-get leaderboard-size))
+                (var-get leaderboard-size)
+                limit
+            ))
+            (all-collectors (list))
+        )
+        (get-top-collectors-by-collection max-limit)
+    )
+)
+
+(define-read-only (get-leaderboard-by-reputation (limit uint))
+    (let ((max-limit (if (> limit (var-get leaderboard-size))
+            (var-get leaderboard-size)
+            limit
+        )))
+        (get-top-collectors-by-reputation max-limit)
+    )
+)
+
+(define-read-only (get-collector-rank-by-collection (collector principal))
+    (let (
+            (collector-data (unwrap! (map-get? collectors collector) none))
+            (total-collected (get total-collected collector-data))
+        )
+        (some (calculate-collection-rank collector total-collected))
+    )
+)
+
+(define-read-only (get-collector-rank-by-reputation (collector principal))
+    (match (get-reputation collector)
+        reputation-score (some (calculate-reputation-rank collector reputation-score))
+        none
+    )
+)
+
+(define-private (get-top-collectors-by-collection (limit uint))
+    (ok limit)
+)
+
+(define-private (get-top-collectors-by-reputation (limit uint))
+    (ok limit)
+)
+
+(define-private (calculate-collection-rank
+        (collector principal)
+        (amount uint)
+    )
+    u1
+)
+
+(define-private (calculate-reputation-rank
+        (collector principal)
+        (reputation uint)
+    )
+    u1
 )
