@@ -9,6 +9,14 @@
 (define-constant err-invalid-price (err u107))
 (define-constant err-order-expired (err u108))
 (define-constant err-cannot-fill-own-order (err u109))
+(define-constant err-milestone-already-claimed (err u110))
+
+(define-constant milestone-bronze u100)
+(define-constant milestone-silver u500)
+(define-constant milestone-gold u1000)
+(define-constant reward-bronze u100)
+(define-constant reward-silver u500)
+(define-constant reward-gold u1500)
 
 (define-fungible-token plastic-token)
 
@@ -19,6 +27,9 @@
         reputation-score: uint,
         last-collection: uint,
         verified: bool,
+        milestone-bronze-claimed: bool,
+        milestone-silver-claimed: bool,
+        milestone-gold-claimed: bool,
     }
 )
 
@@ -84,6 +95,9 @@
             reputation-score: u0,
             last-collection: u0,
             verified: false,
+            milestone-bronze-claimed: false,
+            milestone-silver-claimed: false,
+            milestone-gold-claimed: false,
         }))
     )
 )
@@ -328,4 +342,99 @@
         (reputation uint)
     )
     u1
+)
+
+(define-public (claim-milestone-bronze)
+    (let (
+            (collector-data (unwrap! (map-get? collectors tx-sender) err-collector-not-found))
+            (total-collected (get total-collected collector-data))
+            (already-claimed (get milestone-bronze-claimed collector-data))
+        )
+        (asserts! (>= total-collected milestone-bronze) err-invalid-amount)
+        (asserts! (not already-claimed) err-milestone-already-claimed)
+        (try! (ft-mint? plastic-token reward-bronze tx-sender))
+        (ok (map-set collectors tx-sender
+            (merge collector-data { milestone-bronze-claimed: true })
+        ))
+    )
+)
+
+(define-public (claim-milestone-silver)
+    (let (
+            (collector-data (unwrap! (map-get? collectors tx-sender) err-collector-not-found))
+            (total-collected (get total-collected collector-data))
+            (already-claimed (get milestone-silver-claimed collector-data))
+        )
+        (asserts! (>= total-collected milestone-silver) err-invalid-amount)
+        (asserts! (not already-claimed) err-milestone-already-claimed)
+        (try! (ft-mint? plastic-token reward-silver tx-sender))
+        (ok (map-set collectors tx-sender
+            (merge collector-data { milestone-silver-claimed: true })
+        ))
+    )
+)
+
+(define-public (claim-milestone-gold)
+    (let (
+            (collector-data (unwrap! (map-get? collectors tx-sender) err-collector-not-found))
+            (total-collected (get total-collected collector-data))
+            (already-claimed (get milestone-gold-claimed collector-data))
+        )
+        (asserts! (>= total-collected milestone-gold) err-invalid-amount)
+        (asserts! (not already-claimed) err-milestone-already-claimed)
+        (try! (ft-mint? plastic-token reward-gold tx-sender))
+        (ok (map-set collectors tx-sender
+            (merge collector-data { milestone-gold-claimed: true })
+        ))
+    )
+)
+
+(define-read-only (get-milestone-status (collector principal))
+    (match (map-get? collectors collector)
+        collector-data (some {
+            total-collected: (get total-collected collector-data),
+            bronze-eligible: (>= (get total-collected collector-data) milestone-bronze),
+            bronze-claimed: (get milestone-bronze-claimed collector-data),
+            silver-eligible: (>= (get total-collected collector-data) milestone-silver),
+            silver-claimed: (get milestone-silver-claimed collector-data),
+            gold-eligible: (>= (get total-collected collector-data) milestone-gold),
+            gold-claimed: (get milestone-gold-claimed collector-data),
+        })
+        none
+    )
+)
+
+(define-read-only (get-next-milestone (collector principal))
+    (match (map-get? collectors collector)
+        collector-data (let (
+                (total-collected (get total-collected collector-data))
+                (bronze-claimed (get milestone-bronze-claimed collector-data))
+                (silver-claimed (get milestone-silver-claimed collector-data))
+                (gold-claimed (get milestone-gold-claimed collector-data))
+            )
+            (if (and (< total-collected milestone-bronze) (not bronze-claimed))
+                (some {
+                    milestone: milestone-bronze,
+                    reward: reward-bronze,
+                    remaining: (- milestone-bronze total-collected),
+                })
+                (if (and (< total-collected milestone-silver) (not silver-claimed))
+                    (some {
+                        milestone: milestone-silver,
+                        reward: reward-silver,
+                        remaining: (- milestone-silver total-collected),
+                    })
+                    (if (and (< total-collected milestone-gold) (not gold-claimed))
+                        (some {
+                            milestone: milestone-gold,
+                            reward: reward-gold,
+                            remaining: (- milestone-gold total-collected),
+                        })
+                        none
+                    )
+                )
+            )
+        )
+        none
+    )
 )
