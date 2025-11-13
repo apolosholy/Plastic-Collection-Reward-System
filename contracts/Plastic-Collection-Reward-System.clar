@@ -438,3 +438,133 @@
         none
     )
 )
+
+(define-constant tf-bps-denom u10000)
+(define-data-var tf-owner (optional principal) none)
+(define-data-var tf-fee-recipient (optional principal) none)
+(define-data-var tf-fee-bps uint u0)
+(define-data-var tf-last-id uint u0)
+(define-map tf-listings
+    { id: uint }
+    {
+        seller: principal,
+        price: uint,
+        active: bool,
+    }
+)
+(define-private (tf-is-owner (who principal))
+    (is-eq (var-get tf-owner) (some who))
+)
+(define-read-only (tf-get-owner)
+    (var-get tf-owner)
+)
+(define-read-only (tf-get-fee-recipient)
+    (var-get tf-fee-recipient)
+)
+(define-read-only (tf-get-fee-bps)
+    (var-get tf-fee-bps)
+)
+(define-read-only (tf-get-listing (id uint))
+    (map-get? tf-listings { id: id })
+)
+(define-public (tf-init
+        (owner principal)
+        (fee-recipient principal)
+        (fee-bps uint)
+    )
+    (if (is-none (var-get tf-owner))
+        (if (<= fee-bps tf-bps-denom)
+            (begin
+                (var-set tf-owner (some owner))
+                (var-set tf-fee-recipient (some fee-recipient))
+                (var-set tf-fee-bps fee-bps)
+                (ok true)
+            )
+            (err u1)
+        )
+        (err u2)
+    )
+)
+(define-public (tf-set-fee-bps (fee-bps uint))
+    (if (and (tf-is-owner tx-sender) (<= fee-bps tf-bps-denom))
+        (begin
+            (var-set tf-fee-bps fee-bps)
+            (ok true)
+        )
+        (err u3)
+    )
+)
+(define-public (tf-set-fee-recipient (who principal))
+    (if (tf-is-owner tx-sender)
+        (begin
+            (var-set tf-fee-recipient (some who))
+            (ok true)
+        )
+        (err u4)
+    )
+)
+(define-public (tf-create-listing (price uint))
+    (if (> price u0)
+        (let ((id (+ (var-get tf-last-id) u1)))
+            (begin
+                (var-set tf-last-id id)
+                (map-set tf-listings { id: id } {
+                    seller: tx-sender,
+                    price: price,
+                    active: true,
+                })
+                (ok id)
+            )
+        )
+        (err u5)
+    )
+)
+(define-public (tf-cancel-listing (id uint))
+    (match (map-get? tf-listings { id: id })
+        listing (if (or (is-eq (get seller listing) tx-sender) (tf-is-owner tx-sender))
+            (begin
+                (map-set tf-listings { id: id } {
+                    seller: (get seller listing),
+                    price: (get price listing),
+                    active: false,
+                })
+                (ok true)
+            )
+            (err u7)
+        )
+        (err u6)
+    )
+)
+(define-public (tf-purchase (id uint))
+    (match (map-get? tf-listings { id: id })
+        listing (if (get active listing)
+            (match (var-get tf-fee-recipient)
+                fee-recipient (let (
+                        (price (get price listing))
+                        (seller (get seller listing))
+                        (bps (var-get tf-fee-bps))
+                        (fee (/ (* price bps) tf-bps-denom))
+                        (seller-amount (- price fee))
+                    )
+                    (match (stx-transfer? seller-amount tx-sender seller)
+                        ok1 (match (stx-transfer? fee tx-sender fee-recipient)
+                            ok2 (begin
+                                (map-set tf-listings { id: id } {
+                                    seller: seller,
+                                    price: price,
+                                    active: false,
+                                })
+                                (ok id)
+                            )
+                            err-code (err err-code)
+                        )
+                        err-code (err err-code)
+                    )
+                )
+                (err u8)
+            )
+            (err u9)
+        )
+        (err u6)
+    )
+)
